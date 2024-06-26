@@ -8,8 +8,10 @@ def load_image(image_path, target_shape):
   h, w, c = target_shape
   img = tf.io.read_file(image_path)
   img = tf.image.decode_image(img, channels=c, dtype=tf.float32)
-  # img = tf.image.resize(img, (h, w))
-  img = tf.image.resize_with_pad(img, h, w)
+  img = tf.image.resize(img, (h, w))
+
+  # Padding causes error during training, can't figure out why
+  # img = tf.image.resize_with_pad(img, h, w)
   return img
 
 
