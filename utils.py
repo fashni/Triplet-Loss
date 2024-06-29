@@ -1,12 +1,28 @@
 import numpy as np
+from tqdm import tqdm
 
 
-def compute_preds(model, imgs, labels, bs=32, verbose=0):
-  triu_idx = np.triu_indices(imgs.shape[0], k=1)
-  y_true = (labels[:, None] == labels[None, :])[triu_idx].astype(int)
-  embeddings = model.predict(imgs, batch_size=bs, verbose=verbose)
+def batched(iterable, n):
+  for i in range(0, len(iterable), n):
+    yield iterable[i:i + n]
+
+
+def compute_preds(model, images, labels, bs=32, verbose=0):
+  embeddings = model.predict(images, batch_size=bs, verbose=verbose)
   preds_matrix = -pairwise_distances(embeddings)
+  triu_idx = np.triu_indices(labels.shape[0], k=1)
+  y_true = (labels[:, None] == labels[None, :])[triu_idx].astype(int)
   return y_true, preds_matrix[triu_idx], embeddings
+
+
+def get_images_and_labels(dataset, n_batches=None):
+  if n_batches is not None:
+    dataset = dataset.take(n_batches)
+  images, labels = [], []
+  for image, label in tqdm(dataset):
+    images.extend(image)
+    labels.extend(label)
+  return np.array(images), np.array(labels)
 
 
 def compute_metrics(y_true, y_pred):

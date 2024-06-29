@@ -18,28 +18,31 @@ def augment_image(image):
   return image
 
 
-class BaseImageGenerator:
-  def __init__(self, base_path, batch_size=32, input_shape=(160, 160, 3), augment=True, augment_fn=None, name="dataset"):
+class DatasetGenerator:
+  def __init__(self, base_path, batch_size=32, input_shape=(160, 160, 3), augment=True, augment_fn=None, seed=None, shuffle=True):
     self.batch_size = batch_size
     self.input_shape = input_shape
-    self.height, self.width, self.channels = input_shape
+    self.shuffle = shuffle
     self.augment = augment
     self.augment_fn = augment_fn or augment_image
-    self.images, self.names = self._load_paths(base_path)
-    self.name = name
+    self.images, self.classes = self._load_paths(base_path)
+    self.class_to_index = {cls: idx for idx, cls in enumerate(self.classes)}
+    self.seed = seed
+    if seed is not None:
+      random.seed(seed)
 
   def _load_paths(self, base_path):
     base_path = Path(base_path)
     if base_path.is_dir():
-      names = [c.name for c in base_path.iterdir() if c.is_dir()]
-      images = {c: [str(img) for img in (base_path / c).iterdir() if img.is_file()] for c in names}
+      classes = [c.name for c in base_path.iterdir() if c.is_dir()]
+      images = {c: [str(img) for img in (base_path / c).iterdir() if img.is_file()] for c in classes}
     elif base_path.is_file() and base_path.suffix.casefold() == ".json":
       with base_path.open("r") as f:
         images = json.load(f)
-      names = list(images.keys())
+      classes = list(images.keys())
     else:
       raise ValueError(f"Invalid path: {base_path}")
-    return images, names
+    return images, classes
 
   def _load_image(self, img_path):
     img = tf.io.read_file(img_path)
@@ -48,91 +51,101 @@ class BaseImageGenerator:
 
   def _preprocess_image(self, img):
     img = tf.image.resize(img, (self.input_shape[:2]))
-    # img = tf.image.resize_with_pad(img, target_height, target_width)
-    if self.augment:
-      return self.augment_fn(img)
     return img
 
-  def _generator(self):
-    raise NotImplementedError("Subclasses should implement this method.")
+  def _augment_image(self, img):
+    return self.augment_fn(img)
+
+  def _load_and_preprocess(self, image_path):
+    img = self._load_image(image_path)
+    img = self._preprocess_image(img)
+    if self.augment:
+      img = self._augment_image(img)
+    return img
 
   def get_dataset(self):
     dataset = tf.data.Dataset.from_generator(
       self._generator,
       output_signature=self._get_output_signature()
     )
-    dataset = dataset.batch(self.batch_size)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
+
+  def _generator(self):
+    raise NotImplementedError("Subclasses should implement this method.")
 
   def _get_output_signature(self):
     raise NotImplementedError("Subclasses should implement this method.")
 
 
-class TripletGenerator(BaseImageGenerator):
+class TripletGenerator(DatasetGenerator):
   def _get_triplet(self):
-    name = random.choice(self.names)
+    name = random.choice(self.classes)
     while len(self.images[name]) < 2:
-      name = random.choice(self.names)
+      name = random.choice(self.classes)
     anchor, positive = random.sample(self.images[name], 2)
-    negative_name = random.choice([c for c in self.names if c != name])
+    negative_name = random.choice([c for c in self.classes if c != name])
     negative = random.choice(self.images[negative_name])
     return anchor, positive, negative
 
-  def _load_and_preprocess_triplet(self, triplet):
-    imgs = [self._load_image(img_path) for img_path in triplet]
-    imgs = [self._preprocess_image(img) for img in imgs]
-    anchor_img, positive_img, negative_img = imgs
-    return anchor_img, positive_img, negative_img
+  def _get_next_batch(self):
+    paths = [self._get_triplet() for _ in range(self.batch_size)]
+    anchors = [self._load_and_preprocess(path[0]) for path in paths]
+    positives = [self._load_and_preprocess(path[1]) for path in paths]
+    negatives = [self._load_and_preprocess(path[2]) for path in paths]
+    return anchors, positives, negatives
 
   def _generator(self):
     while True:
-      triplets = [self._get_triplet() for _ in range(self.batch_size)]
-      for triplet in triplets:
-        yield self._load_and_preprocess_triplet(triplet)
+      anchors, positives, negatives = self._get_next_batch()
+      yield tf.stack(anchors), tf.stack(positives), tf.stack(negatives)
 
   def _get_output_signature(self):
     return (
-      tf.TensorSpec(shape=self.input_shape, dtype=tf.float32),
-      tf.TensorSpec(shape=self.input_shape, dtype=tf.float32),
-      tf.TensorSpec(shape=self.input_shape, dtype=tf.float32),
+      tf.TensorSpec(shape=(None, *self.input_shape), dtype=tf.float32),
+      tf.TensorSpec(shape=(None, *self.input_shape), dtype=tf.float32),
+      tf.TensorSpec(shape=(None, *self.input_shape), dtype=tf.float32),
     )
 
 
-class ImageGenerator(BaseImageGenerator):
-  def __init__(self, base_path, batch_size=32, input_shape=(160, 160, 3), augment=True, augment_fn=None, name="dataset"):
-    super().__init__(base_path, batch_size, input_shape, augment, augment_fn, name)
-    self.image_pool = self._initialize_image_pool()
+class BatchGenerator(DatasetGenerator):
+  def __init__(self, base_path, **kwargs):
+    super().__init__(base_path, **kwargs)
     self.current_index = 0
+    self.image_pool, self.n_images = self._get_image_pool()
+    self.n_batches = -(-self.n_images // self.batch_size)
 
-  def _initialize_image_pool(self):
-    image_pool = [(img, name) for name in self.names for img in self.images[name]]
-    random.shuffle(image_pool)
-    return image_pool
+  def _get_image_pool(self):
+    image_pool = [(img, label) for label in self.classes for img in self.images[label]]
+    if self.shuffle:
+      random.shuffle(image_pool)
+    return image_pool, len(image_pool)
 
   def _get_next_batch(self):
-    batch = []
-    while len(batch) < self.batch_size and self.current_index < len(self.image_pool):
-      img, name = self.image_pool[self.current_index]
-      batch.append((img, name))
-      self.current_index += 1
-    return batch
-
-  def _load_and_preprocess_image(self, image_path):
-    img = self._load_image(image_path)
-    img = self._preprocess_image(img)
-    return img
+    batch_paths = self.image_pool[self.current_index:self.current_index + self.batch_size]
+    batch_images = [self._load_and_preprocess(img_path) for img_path, _ in batch_paths]
+    batch_labels = [self.class_to_index[label] for _, label in batch_paths]
+    self.current_index += self.batch_size
+    if self.current_index > len(self.image_pool):
+      self.image_pool, _ = self._get_image_pool()
+      self.current_index = 0
+    return batch_images, batch_labels
 
   def _generator(self):
-    while self.current_index < len(self.image_pool):
-      batch = self._get_next_batch()
-      if not batch:
-        break
-      for img, name in batch:
-        yield self._load_and_preprocess_image(img), name
+    while True:
+      batch_images, batch_labels = self._get_next_batch()
+      yield tf.stack(batch_images), tf.convert_to_tensor(batch_labels, dtype=tf.int32)
 
   def _get_output_signature(self):
     return (
-      tf.TensorSpec(shape=self.input_shape, dtype=tf.float32),
-      tf.TensorSpec(shape=(), dtype=tf.string)
+      tf.TensorSpec(shape=(None, *self.input_shape), dtype=tf.float32),
+      tf.TensorSpec(shape=(None,), dtype=tf.int32)
     )
+
+  def get_dataset(self):
+    dataset = tf.data.Dataset.from_generator(
+      self._generator,
+      output_signature=self._get_output_signature()
+    )
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE).take(self.n_batches)
+    return dataset

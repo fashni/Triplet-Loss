@@ -4,7 +4,6 @@ from tensorflow.keras.layers import (Activation, AveragePooling2D,
                                      Dense, Dropout, Flatten,
                                      GlobalAveragePooling2D, Input, Lambda,
                                      MaxPooling2D)
-from tensorflow.keras.models import Model
 from tensorflow.keras.regularizers import l2
 
 
@@ -95,7 +94,7 @@ def siamnet(input_shape=(105, 105, 3), embedding_size=128, weight_decay=0.0005):
 
   # Final L2 normalization
   output = Lambda(lambda y: tf.math.l2_normalize(y, axis=1))(x)
-  model = Model(inputs=input_layer, outputs=output, name="siamnet")
+  model = tf.keras.models.Model(inputs=input_layer, outputs=output, name="siamnet")
   return model
 
 
@@ -163,7 +162,7 @@ def facenet(input_shape=(160, 160, 3), embedding_size=128, weight_decay=0.0005):
 
   # Final L2 normalization
   output = Lambda(lambda y: tf.math.l2_normalize(y, axis=1))(x)
-  model = Model(inputs=input_layer, outputs=output, name="facenet")
+  model = tf.keras.models.Model(inputs=input_layer, outputs=output, name="facenet")
   return model
 
 
@@ -231,7 +230,7 @@ def inception_resnet_v1(input_shape=(160, 160, 3), embedding_size=128):
   x = BatchNormalization(name='bn')(x)
   x = Lambda(lambda y: tf.math.l2_normalize(y, axis=1), name='l2_norm')(x)
 
-  model = Model(inputs, x, name='inception_resnet_v1')
+  model = tf.keras.models.Model(inputs, x, name='inception_resnet_v1')
   return model
 
 
@@ -271,7 +270,7 @@ def inception_v2(input_shape=(160, 160, 3), embedding_size=128):
   x = Activation('relu')(x)
   x = Lambda(lambda y: tf.math.l2_normalize(y, axis=1), name='l2_norm')(x)
 
-  model = Model(inputs, x, name='inception_v2')
+  model = tf.keras.models.Model(inputs, x, name='inception_v2')
   return model
 
 
