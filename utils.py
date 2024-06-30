@@ -20,9 +20,9 @@ def get_images_and_labels(dataset, n_batches=None):
     dataset = dataset.take(n_batches)
   images, labels = [], []
   for image, label in tqdm(dataset):
-    images.extend(image)
-    labels.extend(label)
-  return np.array(images), np.array(labels)
+    images.append(image)
+    labels.append(label)
+  return np.concatenate(images), np.concatenate(labels)
 
 
 def compute_metrics(y_true, y_pred):
