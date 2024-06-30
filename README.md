@@ -1,4 +1,4 @@
-# Triplet loss [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fashni/triplet-loss/blob/master/train.ipynb)
+# Triplet loss [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/fashni/triplet-loss/blob/main/train.ipynb)
 
 
 ## Resources
