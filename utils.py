@@ -7,9 +7,9 @@ def batched(iterable, n):
     yield iterable[i:i + n]
 
 
-def compute_preds(model, images, labels, bs=32, verbose=0):
-  embeddings = model.predict(images, batch_size=bs, verbose=verbose)
-  preds_matrix = -pairwise_distances(embeddings)
+def compute_preds(model, images, labels, batch_size=32, squared=False, verbose=0):
+  embeddings = model.predict(images, batch_size=batch_size, verbose=verbose)
+  preds_matrix = -pairwise_distances(embeddings, squared)
   triu_idx = np.triu_indices(labels.shape[0], k=1)
   y_true = (labels[:, None] == labels[None, :])[triu_idx].astype(int)
   return y_true, preds_matrix[triu_idx], embeddings
@@ -51,10 +51,12 @@ def compute_distances(embedding1, embedding2, axis=None):
   return ((embedding1 - embedding2)**2).sum(axis=axis)
 
 
-def pairwise_distances(embeddings):
+def pairwise_distances(embeddings, squared=False):
   dot_product = np.matmul(embeddings, embeddings.T)
   square_norm = np.diagonal(dot_product)
   distances = square_norm[None, :] - 2.0 * dot_product + square_norm[:, None]
+  if not squared:
+    distances = np.sqrt(distances)
   return distances
 
 
