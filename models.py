@@ -10,13 +10,28 @@ from triplet_loss import (batch_all_triplet_loss, batch_hard_triplet_loss,
                           siamese_triplet_loss)
 
 
-class SiameseModel(tf.keras.Model):
-  def __init__(self, model, margin, squared):
-    super(SiameseModel, self).__init__()
-    self.model = model
-    self.base_model = model.layers[-1]
+class SiameseTripletModel(tf.keras.Model):
+  def __init__(self, margin, squared, *args, **kwargs):
+    super().__init__(*args, **kwargs)
     self.margin = margin
     self.squared = squared
+    self.base_model = self.layers[-1]
+
+  def train_step(self, data):
+    anchors, positives, negatives = data
+    with tf.GradientTape() as tape:
+      a_embeddings, p_embeddings, n_embeddings = self([anchors, positives, negatives], training=True)
+      loss = siamese_triplet_loss(a_embeddings, p_embeddings, n_embeddings, self.margin, self.squared)
+
+    gradients = tape.gradient(loss, self.trainable_variables)
+    self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+    return {"loss": loss}
+
+  def test_step(self, data):
+    anchors, positives, negatives = data
+    a_embeddings, p_embeddings, n_embeddings = self([anchors, positives, negatives], training=False)
+    loss = siamese_triplet_loss(a_embeddings, p_embeddings, n_embeddings, self.margin, self.squared)
+    return {"loss": loss}
 
   def save_weights(self, *args, **kwargs):
     self.base_model.save_weights(*args, **kwargs)
@@ -24,32 +39,8 @@ class SiameseModel(tf.keras.Model):
   def load_weights(self, *args, **kwargs):
     self.base_model.load_weights(*args, **kwargs)
 
-  def summary(self, *args, **kwargs):
-    self.model.summary(*args, **kwargs)
-
   def predict(self, *args, **kwargs):
     return self.base_model.predict(*args, **kwargs)
-
-  def compile(self, optimizer, weighted_metrics=[]):
-    super(SiameseModel, self).compile(optimizer=optimizer, weighted_metrics=weighted_metrics)
-    self.optimizer = optimizer
-    self.weighted_metrics = weighted_metrics if weighted_metrics else []
-
-  def train_step(self, data):
-    anchors, positives, negatives = data
-    with tf.GradientTape() as tape:
-      a_embeddings, p_embeddings, n_embeddings = self.model([anchors, positives, negatives], training=True)
-      loss = siamese_triplet_loss(a_embeddings, p_embeddings, n_embeddings, self.margin, self.squared)
-
-    gradients = tape.gradient(loss, self.model.trainable_variables)
-    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-    return {"loss": loss}
-
-  def test_step(self, data):
-    anchors, positives, negatives = data
-    a_embeddings, p_embeddings, n_embeddings = self.model([anchors, positives, negatives], training=False)
-    loss = siamese_triplet_loss(a_embeddings, p_embeddings, n_embeddings, self.margin, self.squared)
-    return {"loss": loss}
 
 
 class OnlineTripletModel(tf.keras.Model):
@@ -110,8 +101,9 @@ def _build_siamese_model(input_shape, base_model, margin, squared):
   output_p = base_model(input_p)
   output_n = base_model(input_n)
 
-  model = tf.keras.models.Model(inputs=[input_a, input_p, input_n], outputs=[output_a, output_p, output_n])
-  return SiameseModel(model, margin=margin, squared=squared)
+  inputs = [input_a, input_p, input_n]
+  outputs = [output_a, output_p, output_n]
+  return SiameseTripletModel(margin, squared, inputs=inputs, outputs=outputs)
 
 
 def _conv2d_bn(x, filters, kernel_size, strides=1, padding='same', name=None):
