@@ -31,6 +31,10 @@ class DatasetGenerator:
     if seed is not None:
       random.seed(seed)
 
+    self.n_images = sum(len(images) for images in self.images.values())
+    self.n_classes = len(self.classes)
+    print(f"Loaded {self.n_images} images from {self.n_classes} classes.")
+
   def _load_paths(self, base_path):
     base_path = Path(base_path)
     if base_path.is_dir():
