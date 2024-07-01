@@ -7,12 +7,23 @@ def batched(iterable, n):
     yield iterable[i:i + n]
 
 
-def compute_preds(model, images, labels, batch_size=32, squared=False, verbose=0):
-  embeddings = model.predict(images, batch_size=batch_size, verbose=verbose)
+def get_embeddings(model, images, batch_size=32, verbose=0):
+  return model.predict(images, batch_size=batch_size, verbose=verbose)
+
+
+def get_pairwise_similarity(embeddings, labels, squared=False, norm=False):
+  assert labels.shape[0] == embeddings.shape[0]
+  n = labels.shape[0]
+  triu_idx = np.triu_indices(n, k=1)
+
   preds_matrix = -pairwise_distances(embeddings, squared)
-  triu_idx = np.triu_indices(labels.shape[0], k=1)
-  y_true = (labels[:, None] == labels[None, :])[triu_idx].astype(int)
-  return y_true, preds_matrix[triu_idx], embeddings
+  labls_matrix = (labels[:, None] == labels[None, :]).astype(int)
+  y_true = labls_matrix[triu_idx]
+  y_pred = preds_matrix[triu_idx]
+
+  if norm:
+    y_pred = normalise_value(y_pred)
+  return y_true, y_pred
 
 
 def get_images_and_labels(dataset, n_batches=None):
@@ -25,7 +36,7 @@ def get_images_and_labels(dataset, n_batches=None):
   return np.concatenate(images), np.concatenate(labels)
 
 
-def compute_metrics(y_true, y_pred):
+def get_metrics(y_true, y_pred):
   sort_idx = y_pred.argsort()
   preds = y_pred[sort_idx]
   labls = y_true[sort_idx]
@@ -47,8 +58,11 @@ def compute_metrics(y_true, y_pred):
   return fpr[idx], tpr[idx], prc[idx], acc[idx], f1[idx], thres, roc_auc
 
 
-def compute_distances(embedding1, embedding2, axis=None):
-  return ((embedding1 - embedding2)**2).sum(axis=axis)
+def distances(embedding1, embedding2, axis=None, squared=False):
+  distances = np.sum(np.square(embedding1 - embedding2), axis=axis)
+  if not squared:
+    distances = np.sqrt(distances)
+  return distances
 
 
 def pairwise_distances(embeddings, squared=False):
