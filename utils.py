@@ -26,6 +26,22 @@ def get_pairwise_similarity(embeddings, labels, squared=False, norm=False):
   return y_true, y_pred
 
 
+def get_undersampled_idx(y_true):
+  false_idx = y_true == 0
+  true_idx = y_true == 1
+  n_false = false_idx.sum()
+  n_true = true_idx.sum()
+
+  major_idx, minor_idx = false_idx, true_idx
+  n_major, n_minor = n_false, n_true
+  if n_minor > n_major:
+    major_idx, minor_idx = minor_idx, major_idx
+    n_major, n_minor = n_minor, n_major
+
+  undersampled_major_idx = np.random.choice(np.flatnonzero(major_idx), n_minor, replace=False)
+  return np.concatenate([undersampled_major_idx, np.flatnonzero(minor_idx)])
+
+
 def get_images_and_labels(dataset, n_batches=None):
   if n_batches is not None:
     dataset = dataset.take(n_batches)
