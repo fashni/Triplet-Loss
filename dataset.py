@@ -153,3 +153,34 @@ class BatchGenerator(DatasetGenerator):
     )
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE).take(self.n_batches)
     return dataset
+
+
+class BalancedBatchGenerator(BatchGenerator):
+  def __init__(self, base_path, classes_per_batch=8, images_per_class=4, **kwargs):
+    super().__init__(base_path, **kwargs)
+    self.classes_per_batch = classes_per_batch
+    self.images_per_class = images_per_class
+    self.batch_size = classes_per_batch * images_per_class
+
+  def _get_next_batch(self):
+    batch_images, batch_labels = [], []
+
+    selected_classes = random.sample(self.classes, self.classes_per_batch)
+    for cls in selected_classes:
+      image_paths = self.images[cls]
+      if len(image_paths) < self.images_per_class:
+        repeats = -(-self.images_per_class // len(image_paths))
+        image_paths *= repeats
+
+      selected_images = random.sample(image_paths, self.images_per_class)
+      for img_path in selected_images:
+        img = self._load_and_preprocess(img_path)
+        batch_images.append(img)
+        batch_labels.append(self.class_to_index[cls])
+  
+    if self.shuffle:
+      combined = list(zip(batch_images, batch_labels))
+      random.shuffle(combined)
+      batch_images[:], batch_labels[:] = zip(*combined)
+
+    return batch_images, batch_labels
