@@ -77,9 +77,12 @@ class OnlineTripletModel(tf.keras.Model):
 
 # Helper functions
 def _validate(strategy):
-  valid_strategies = ["siamese", "batch_all", "batch_hard"]
-  assert strategy is not None, f"Strategy must provided, valid strategies: {valid_strategies}."
-  assert strategy in valid_strategies, f"Invalid strategy, valid strategies: {valid_strategies}."
+  valid_strategies = ["none", "siamese", "batch_all", "batch_hard"]
+  if strategy is None:
+    print("Warning: Training strategy is not provided.")
+    strategy = "none"
+  assert strategy in valid_strategies, f"Invalid training strategy, valid strategies: {valid_strategies}."
+  return strategy
 
 
 def _build_model(input_layer, output_layer, strategy, margin, squared=False, name="model"):
@@ -88,6 +91,9 @@ def _build_model(input_layer, output_layer, strategy, margin, squared=False, nam
                               inputs=input_layer, outputs=output_layer, name=name)
 
   base_model = tf.keras.models.Model(inputs=input_layer, outputs=output_layer, name=name)
+  if strategy == "none":
+    return base_model
+
   model = _build_siamese_model(input_layer.shape[1:], base_model, margin, squared)
   return model
 
@@ -167,7 +173,7 @@ def siamnet(input_shape=(105, 105, 3), embedding_size=128, margin=0.5, squared=F
   """
   https://www.cs.cmu.edu/~rsalakhu/papers/oneshot1.pdf
   """
-  _validate(strategy)
+  strategy = _validate(strategy)
   input_layer = Input(shape=input_shape)
   x = Conv2D(64, (10, 10), kernel_initializer="he_uniform", kernel_regularizer=l2(weight_decay), name='conv1')(input_layer)
   x = BatchNormalization(name='bn1')(x)
@@ -204,7 +210,7 @@ def facenet(input_shape=(160, 160, 3), embedding_size=128, margin=0.5, squared=F
   """
   https://arxiv.org/abs/1503.03832
   """
-  _validate(strategy)
+  strategy = _validate(strategy)
   input_layer = Input(shape=input_shape)
 
   # Layer 1
@@ -273,7 +279,7 @@ def facenet(input_shape=(160, 160, 3), embedding_size=128, margin=0.5, squared=F
 
 
 def inception_resnet(input_shape=(160, 160, 3), embedding_size=128, margin=0.5, squared=False, strategy=None):
-  _validate(strategy)
+  strategy = _validate(strategy)
   input_layer = Input(shape=input_shape)
   x = _conv2d_bn(input_layer, 32, 3, strides=2, padding='valid')
   x = _conv2d_bn(x, 32, 3, padding='valid')
@@ -343,7 +349,7 @@ def inception_resnet(input_shape=(160, 160, 3), embedding_size=128, margin=0.5, 
 
 
 def inception(input_shape=(160, 160, 3), embedding_size=128, margin=0.5, squared=False, strategy=None):
-  _validate(strategy)
+  strategy = _validate(strategy)
   input_layer = Input(shape=input_shape)
 
   # Initial layers
